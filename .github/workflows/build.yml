@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Vanilla Zephyr build matrix: (board × app) targets crossed with two version
+# channels (stable = release tag, main = bot-bumped SHA). Build-gate only — CI
+# never flashes. GitHub-hosted runners only; no self-hosted, no container.
+
+name: build
+
+on:
+  schedule:
+    - cron: "23 4 * * *"          # nightly ~04:23 UTC
+  workflow_dispatch: {}
+  push:
+    branches: [main]              # incl. the bump-main commit; add a paths: filter once trusted
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false            # a broken 'main' channel must NOT mask a green 'stable'
+      matrix:
+        channel: [stable, main]
+        target:
+          - id: rpi_4b
+            board: rpi_4b
+            app: samples/hello_world
+            tc: aarch64-zephyr-elf
+          - id: pico_w
+            board: rpi_pico/rp2040/w
+            app: samples/hello_world
+            tc: arm-zephyr-eabi
+          - id: heltec_v3
+            board: heltec_wifi_lora32_v3/esp32s3/procpu
+            app: samples/drivers/lora/send
+            tc: xtensa-espressif_esp32s3_zephyr-elf
+          - id: xiao_ble
+            board: xiao_ble
+            app: samples/hello_world
+            tc: arm-zephyr-eabi
+
+    name: ${{ matrix.channel }} · ${{ matrix.target.id }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          path: zephyr-builds
+
+      - name: Setup Zephyr (${{ matrix.channel }})
+        uses: zephyrproject-rtos/action-zephyr-setup@5ec39f5cba83346d83a836dfed1524270c660e28 # v1.0.14
+        with:
+          app-path: zephyr-builds
+          manifest-file-name: west-${{ matrix.channel }}.yml   # channel selects the manifest
+          toolchains: ${{ matrix.target.tc }}
+          sdk-version: auto                                     # right SDK per Zephyr version
+
+      - name: Build ${{ matrix.target.board }} — ${{ matrix.target.app }}
+        run: |
+          west build -p always -b ${{ matrix.target.board }} \
+            -d build zephyr/${{ matrix.target.app }}
+
+      - name: Size report
+        # Non-failing for now (hello_world is tiny). A hard DRAM gate lands with
+        # real firmware (fail >95% on stable, warn on main).
+        run: west build -d build -t ram_report | tee build/ram_report.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.channel }}-${{ matrix.target.id }}
+          path: |
+            build/zephyr/zephyr.bin
+            build/zephyr/zephyr.elf
+            build/ram_report.txt
+          retention-days: 14
+          if-no-files-found: warn

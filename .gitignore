@@ -1,0 +1,12 @@
+# west workspace artifacts (should never be created inside the repo, but guard anyway)
+/build/
+/.west/
+/modules/
+/zephyr/
+/bootloader/
+/tools/
+/twister-out*/
+
+# editor / OS cruft
+*.swp
+.DS_Store

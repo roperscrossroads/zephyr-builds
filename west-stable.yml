@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# STABLE channel manifest — pins upstream Zephyr to a release tag.
+# The 'main' channel lives in west-main.yml (bot-bumped SHA). The two files are
+# identical except the `zephyr` project `revision:`; CI selects between them via
+# action-zephyr-setup's `manifest-file-name` input (west-<channel>.yml).
+#
+# Move this tag by hand only when a new Zephyr release is validated.
+
+manifest:
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: v4.4.1
+      clone-depth: 1
+      import:
+        # Allowlisted from the start (accept first-run iteration if a board
+        # pulls in a module not listed here).
+        name-allowlist:
+          - cmsis
+          - cmsis_6
+          - hal_espressif        # heltec_wifi_lora32_v3 (esp32s3)
+          - hal_nordic           # xiao_ble (nRF52840)
+          - hal_rpi_pico         # rpi_pico/rp2040/w
+          - hal_stm32            # headroom for STM32WL LoRa boards later
+          - hal_xtensa           # esp32s3
+          - loramac-node         # SX126x / lora sample (needed present even for native backend)
+          - picolibc
+
+  self:
+    path: zephyr-builds

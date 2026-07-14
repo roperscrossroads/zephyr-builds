@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# MAIN (bleeding-edge) channel manifest — pins upstream Zephyr to a full SHA on
+# `main`. The `revision:` below is rewritten nightly by .github/workflows/bump-main.yml
+# so every build is reproducible from history AND the bump commit paints green.
+# Do not hand-edit the revision; let the bot move it. The 'stable' channel lives
+# in west-stable.yml (release tag). Keep everything else in sync between the two.
+
+manifest:
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: 1c2bf123944d0ff064f5c7e46833b84f78cff771  # bot-bumped: main tip
+      clone-depth: 1
+      import:
+        name-allowlist:
+          - cmsis
+          - cmsis_6
+          - hal_espressif        # heltec_wifi_lora32_v3 (esp32s3)
+          - hal_nordic           # xiao_ble (nRF52840)
+          - hal_rpi_pico         # rpi_pico/rp2040/w
+          - hal_stm32            # headroom for STM32WL LoRa boards later
+          - hal_xtensa           # esp32s3
+          - loramac-node         # SX126x / lora sample (needed present even for native backend)
+          - picolibc
+
+  self:
+    path: zephyr-builds

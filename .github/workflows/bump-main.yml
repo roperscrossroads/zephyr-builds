@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Nightly bot-bump of the 'main' channel: rewrite west-main.yml's zephyr
+# `revision:` to the current upstream main tip and commit it. This keeps the
+# bleeding-edge channel reproducible from git history (and paints the repo green).
+#
+# Ordering, not push-triggering, drives the build: this runs at 04:00 and the
+# build matrix runs at 04:23 (build.yml), so the nightly build picks up the
+# freshly-committed SHA. We deliberately do NOT rely on this commit triggering
+# build.yml — a push made with the default GITHUB_TOKEN does not trigger other
+# `on: push` workflows (GitHub's recursive-workflow guard).
+
+name: bump-main
+
+on:
+  schedule:
+    - cron: "0 4 * * *"           # 23 min before build.yml's nightly run
+  workflow_dispatch: {}
+
+permissions:
+  contents: write                 # to commit the bumped manifest
+
+concurrency:
+  group: bump-main
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Resolve upstream Zephyr main tip
+        id: tip
+        run: |
+          SHA=$(git ls-remote https://github.com/zephyrproject-rtos/zephyr main | cut -f1)
+          if [ -z "$SHA" ]; then echo "failed to resolve main tip" >&2; exit 1; fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Upstream zephyr main tip: $SHA"
+
+      - name: Rewrite west-main.yml revision (surgical; preserves comments)
+        env:
+          SHA: ${{ steps.tip.outputs.sha }}
+        run: |
+          sed -i -E "s|(revision: )[0-9a-f]{40}|\1${SHA}|" west-main.yml
+          grep -n "revision: ${SHA}" west-main.yml
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- west-main.yml; then
+            echo "No change — already at main tip."
+            exit 0
+          fi
+          git config user.name  "Adam Roper"
+          git config user.email "72768950+roperscrossroads@users.noreply.github.com"
+          SHORT=$(echo "${{ steps.tip.outputs.sha }}" | cut -c1-12)
+          git add west-main.yml
+          git commit -m "chore(main): bump zephyr to ${SHORT}"
+          git push
