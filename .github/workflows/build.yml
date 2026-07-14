@@ -74,3 +74,54 @@ jobs:
             build/ram_report.txt
           retention-days: 14
           if-no-files-found: warn
+
+  # Aggregate every cell's binaries into a rolling 'nightly' pre-release with a
+  # sha256sums manifest. Publishes whatever built — a red 'main' cell drops out
+  # rather than blocking the green 'stable' assets. Skipped on pull_request.
+  release:
+    needs: build
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write            # create/replace the rolling 'nightly' release + tag
+    steps:
+      - name: Download all cell artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: artifacts
+
+      - name: Stage assets + sha256sums
+        id: stage
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p dist
+          for d in artifacts/*/; do
+            n=$(basename "$d")     # e.g. stable-heltec_v3
+            if [ -f "$d/zephyr/zephyr.bin" ]; then cp "$d/zephyr/zephyr.bin" "dist/$n.bin"; fi
+            if [ -f "$d/zephyr/zephyr.elf" ]; then cp "$d/zephyr/zephyr.elf" "dist/$n.elf"; fi
+          done
+          cd dist
+          assets=( *.bin *.elf )
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "No build outputs to publish — skipping release."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sha256sum "${assets[@]}" > sha256sums.txt
+          echo "----- sha256sums.txt -----"; cat sha256sums.txt
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      - name: Publish rolling 'nightly' pre-release
+        if: ${{ steps.stage.outputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Recreate the rolling tag/release each run so stale assets never linger.
+          gh release delete nightly --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          gh release create nightly dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --title "Nightly firmware" \
+            --notes "Rolling nightly build from \`${GITHUB_SHA}\`. Assets are overwritten each run — not a stable release. Verify downloads against \`sha256sums.txt\`."

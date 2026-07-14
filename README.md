@@ -40,7 +40,7 @@ fetched by `west update` — no app source lives in this repo yet.
 ```
 west-stable.yml               # imports zephyr @ release tag  + module allowlist
 west-main.yml                 # imports zephyr @ bot-bumped SHA + module allowlist
-.github/workflows/build.yml   # matrix: channel × target
+.github/workflows/build.yml   # matrix: channel × target, + rolling 'nightly' release
 .github/workflows/bump-main.yml  # nightly: rewrite west-main.yml SHA, commit
 ```
 
@@ -60,6 +60,27 @@ west build -p always -b rpi_4b -d build zephyr/samples/hello_world
 Swap `west-main.yml` for the bleeding-edge channel. There are no repo-local git
 hooks — CI is the only build gate.
 
+## Downloads
+
+Every build publishes a rolling **`nightly`** pre-release: each cell's
+`zephyr.bin` + `zephyr.elf` named `<channel>-<board>.{bin,elf}`, plus a
+`sha256sums.txt`. Assets are overwritten each run, so the URLs are stable:
+
+```
+https://github.com/roperscrossroads/zephyr-builds/releases/download/nightly/stable-heltec_v3.bin
+```
+
+Verify a download:
+
+```sh
+base=https://github.com/roperscrossroads/zephyr-builds/releases/download/nightly
+curl -LO "$base/sha256sums.txt"
+curl -LO "$base/stable-heltec_v3.bin"
+sha256sum -c sha256sums.txt --ignore-missing
+```
+
+A red `main` cell drops out of the release rather than blocking the green
+`stable` assets. Tagged, permanent releases will come with real firmware.
 
 ## License
 
