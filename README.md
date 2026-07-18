@@ -38,11 +38,18 @@ fetched by `west update` — no app source lives in this repo yet.
 ## Layout
 
 ```
-west-stable.yml               # imports zephyr @ release tag  + module allowlist
-west-main.yml                 # imports zephyr @ bot-bumped SHA + module allowlist
-.github/workflows/build.yml   # matrix: channel × target, + rolling 'nightly' release
-.github/workflows/bump-main.yml  # nightly: rewrite west-main.yml SHA, commit
+west-stable.yml                 # imports zephyr @ release tag  + module allowlist
+west-main.yml                   # imports zephyr @ bot-bumped SHA + module allowlist
+.github/workflows/
+  ci.yml         # reusable: 4-board matrix build + per-channel release (input: channel)
+  main.yml       # DAILY (+ dispatch, + push to west-main.yml)   → ci.yml(main)   → 'nightly'
+  stable.yml     # WEEKLY (+ dispatch, + push to west-stable.yml) → ci.yml(stable) → 'stable'
+  bump-main.yml  # 04:00 daily: rewrite west-main.yml SHA to upstream main tip, commit
 ```
+
+The channels are split by **cadence**: `main` tracks upstream Zephyr so it builds
+daily; `stable` is a pinned tag with byte-identical output, so it only rebuilds
+on change, on demand, or a weekly reproducibility heartbeat.
 
 ## Build locally
 
@@ -62,25 +69,30 @@ hooks — CI is the only build gate.
 
 ## Downloads
 
-Every build publishes a rolling **`nightly`** pre-release: each cell's
-`zephyr.bin` + `zephyr.elf` named `<channel>-<board>.{bin,elf}`, plus a
-`sha256sums.txt`. Assets are overwritten each run, so the URLs are stable:
+Each channel publishes its own release — every board's `zephyr.bin` + `zephyr.elf`
+named `<channel>-<board>.{bin,elf}`, plus a `sha256sums.txt`. Assets are
+regenerated each run, so the URLs are stable:
+
+| Release | Channel | Contents | Refreshed |
+|---|---|---|---|
+| **`stable`** | v4.4.1 tag | `stable-<board>.{bin,elf}` | on change / weekly |
+| **`nightly`** *(pre-release)* | Zephyr `main` | `main-<board>.{bin,elf}` | daily |
 
 ```
-https://github.com/roperscrossroads/zephyr-builds/releases/download/nightly/stable-heltec_v3.bin
+https://github.com/roperscrossroads/zephyr-builds/releases/download/stable/stable-heltec_v3.bin
 ```
 
 Verify a download:
 
 ```sh
-base=https://github.com/roperscrossroads/zephyr-builds/releases/download/nightly
+base=https://github.com/roperscrossroads/zephyr-builds/releases/download/stable
 curl -LO "$base/sha256sums.txt"
 curl -LO "$base/stable-heltec_v3.bin"
 sha256sum -c sha256sums.txt --ignore-missing
 ```
 
-A red `main` cell drops out of the release rather than blocking the green
-`stable` assets. Tagged, permanent releases will come with real firmware.
+A red board drops out of its release rather than blocking the others. Tagged,
+permanent releases will come with real firmware.
 
 ## License
 

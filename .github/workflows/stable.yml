@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Stable channel: pinned to a Zephyr release tag, so its output is byte-identical
+# until the tag is bumped. No daily rebuild — only when its manifest/workflow
+# changes, on manual dispatch, and a weekly heartbeat to catch SDK/action drift
+# and confirm reproducibility. Publishes the 'stable' release. Logic is in ci.yml.
+
+name: stable
+
+on:
+  schedule:
+    - cron: "30 5 * * 1"        # weekly, Monday ~05:30 UTC (reproducibility heartbeat)
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - west-stable.yml
+      - .github/workflows/ci.yml
+      - .github/workflows/stable.yml
+
+jobs:
+  build:
+    permissions:
+      contents: write            # ci.yml's release job needs this
+    uses: ./.github/workflows/ci.yml
+    with:
+      channel: stable
+      release-tag: stable
+      prerelease: false

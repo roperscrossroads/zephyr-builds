@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Bleeding-edge channel: builds the bot-bumped Zephyr main SHA DAILY (it changes
+# every night), plus on manual dispatch and when its manifest/workflow changes.
+# Publishes the rolling 'nightly' pre-release. Cadence only — logic is in ci.yml.
+
+name: main
+
+on:
+  schedule:
+    - cron: "23 4 * * *"        # daily, ~23 min after bump-main.yml (04:00)
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - west-main.yml
+      - .github/workflows/ci.yml
+      - .github/workflows/main.yml
+
+jobs:
+  build:
+    permissions:
+      contents: write            # ci.yml's release job needs this
+    uses: ./.github/workflows/ci.yml
+    with:
+      channel: main
+      release-tag: nightly
+      prerelease: true

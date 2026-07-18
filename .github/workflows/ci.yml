@@ -1,17 +1,27 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Vanilla Zephyr build matrix: (board × app) targets crossed with two version
-# channels (stable = release tag, main = bot-bumped SHA). Build-gate only — CI
-# never flashes. GitHub-hosted runners only; no self-hosted, no container.
+# Reusable build+release for ONE channel. Called by main.yml (channel=main) and
+# stable.yml (channel=stable), which own the cadence. Builds the 4-board matrix
+# for the given channel and publishes its binaries to a channel-specific release.
+# Build-gate only — CI never flashes. GitHub-hosted runners; no self-hosted.
 
-name: build
+name: ci
 
 on:
-  schedule:
-    - cron: "23 4 * * *"          # nightly ~04:23 UTC
-  workflow_dispatch: {}
-  push:
-    branches: [main]              # incl. the bump-main commit; add a paths: filter once trusted
+  workflow_call:
+    inputs:
+      channel:
+        description: "stable | main — selects west-<channel>.yml"
+        required: true
+        type: string
+      release-tag:
+        description: "release tag to (re)publish this channel's binaries to"
+        required: true
+        type: string
+      prerelease:
+        description: "mark the release as a pre-release"
+        required: true
+        type: boolean
 
 permissions:
   contents: read
@@ -20,9 +30,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false            # a broken 'main' channel must NOT mask a green 'stable'
+      fail-fast: false            # one red board must not mask the others
       matrix:
-        channel: [stable, main]
         target:
           - id: rpi_4b
             board: rpi_4b
@@ -41,17 +50,17 @@ jobs:
             app: samples/hello_world
             tc: arm-zephyr-eabi
 
-    name: ${{ matrix.channel }} · ${{ matrix.target.id }}
+    name: ${{ inputs.channel }} · ${{ matrix.target.id }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: zephyr-builds
 
-      - name: Setup Zephyr (${{ matrix.channel }})
+      - name: Setup Zephyr (${{ inputs.channel }})
         uses: zephyrproject-rtos/action-zephyr-setup@5ec39f5cba83346d83a836dfed1524270c660e28 # v1.0.14
         with:
           app-path: zephyr-builds
-          manifest-file-name: west-${{ matrix.channel }}.yml   # channel selects the manifest
+          manifest-file-name: west-${{ inputs.channel }}.yml   # channel selects the manifest
           toolchains: ${{ matrix.target.tc }}
           sdk-version: auto                                     # right SDK per Zephyr version
 
@@ -61,13 +70,13 @@ jobs:
             -d build zephyr/${{ matrix.target.app }}
 
       - name: Size report
-        # Non-failing for now (hello_world is tiny). A hard DRAM gate lands with
+        # Non-failing for now (samples are tiny). A hard DRAM gate lands with
         # real firmware (fail >95% on stable, warn on main).
         run: west build -d build -t ram_report | tee build/ram_report.txt
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: ${{ matrix.channel }}-${{ matrix.target.id }}
+          name: ${{ inputs.channel }}-${{ matrix.target.id }}
           path: |
             build/zephyr/zephyr.bin
             build/zephyr/zephyr.elf
@@ -75,19 +84,19 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-  # Aggregate every cell's binaries into a rolling 'nightly' pre-release with a
-  # sha256sums manifest. Publishes whatever built — a red 'main' cell drops out
-  # rather than blocking the green 'stable' assets. Skipped on pull_request.
+  # Aggregate this channel's binaries into its release with a sha256sums manifest.
+  # Publishes whatever built — a red cell drops out rather than blocking the rest.
   release:
     needs: build
-    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write            # create/replace the rolling 'nightly' release + tag
+      contents: write            # create/replace this channel's release + tag
     steps:
-      - name: Download all cell artifacts
+      - name: Download this channel's artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
+          pattern: ${{ inputs.channel }}-*
           path: artifacts
 
       - name: Stage assets + sha256sums
@@ -112,16 +121,16 @@ jobs:
           echo "----- sha256sums.txt -----"; cat sha256sums.txt
           echo "publish=true" >> "$GITHUB_OUTPUT"
 
-      - name: Publish rolling 'nightly' pre-release
+      - name: Publish '${{ inputs.release-tag }}' release
         if: ${{ steps.stage.outputs.publish == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Recreate the rolling tag/release each run so stale assets never linger.
-          gh release delete nightly --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
-          gh release create nightly dist/* \
+          # Recreate the tag/release each run so stale assets never linger.
+          gh release delete "${{ inputs.release-tag }}" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          gh release create "${{ inputs.release-tag }}" dist/* \
             --repo "$GITHUB_REPOSITORY" \
-            --prerelease \
-            --title "Nightly firmware" \
-            --notes "Rolling nightly build from \`${GITHUB_SHA}\`. Assets are overwritten each run — not a stable release. Verify downloads against \`sha256sums.txt\`."
+            ${{ inputs.prerelease && '--prerelease' || '' }} \
+            --title "${{ inputs.channel == 'stable' && 'Stable firmware' || 'Nightly firmware' }}" \
+            --notes "Channel \`${{ inputs.channel }}\`, built from \`${GITHUB_SHA}\`. Assets regenerated each run — verify downloads against \`sha256sums.txt\`."

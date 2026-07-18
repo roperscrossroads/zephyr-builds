@@ -5,16 +5,18 @@
 # bleeding-edge channel reproducible from git history (and paints the repo green).
 #
 # Ordering, not push-triggering, drives the build: this runs at 04:00 and the
-# build matrix runs at 04:23 (build.yml), so the nightly build picks up the
+# build matrix runs at 04:23 (main.yml), so the nightly build picks up the
 # freshly-committed SHA. We deliberately do NOT rely on this commit triggering
-# build.yml — a push made with the default GITHUB_TOKEN does not trigger other
-# `on: push` workflows (GitHub's recursive-workflow guard).
+# main.yml — a push made with the default GITHUB_TOKEN does not trigger other
+# `on: push` workflows (GitHub's recursive-workflow guard). This is also why
+# main.yml keeps a daily cron despite its push-paths filter: that filter only
+# ever fires for a human push, never for this bot commit.
 
 name: bump-main
 
 on:
   schedule:
-    - cron: "0 4 * * *"           # 23 min before build.yml's nightly run
+    - cron: "0 4 * * *"           # 23 min before main.yml's nightly run
   workflow_dispatch: {}
 
 permissions:
