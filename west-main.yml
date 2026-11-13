@@ -14,7 +14,7 @@ manifest:
   projects:
     - name: zephyr
       remote: zephyrproject-rtos
-      revision: 3a7ed4fcd55759ccd250bab65b0368bc8b5dc94b  # bot-bumped: main tip
+      revision: f8da8ea370508f274685a25ff19dbe5a9ff54790  # bot-bumped: main tip
       clone-depth: 1
       import:
         name-allowlist:
